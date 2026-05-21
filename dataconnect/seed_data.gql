@@ -1,0 +1,56 @@
+mutation SeedClothingData @transaction @auth(level: USER, insecureReason: "This mutation is for seeding purposes and will be run by an authenticated user.") {
+  user_insertMany(data: [
+    {
+      id: "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+      username: "fashionista_gal",
+      email: "fashionista.gal@example.com",
+      createdAt: "2024-01-15T10:00:00Z"
+    },
+    {
+      id: "b2c3d4e5-f6a7-8901-2345-67890abcdef0",
+      username: "style_guru_guy",
+      email: "style.guru.guy@example.com",
+      createdAt: "2024-01-15T10:05:00Z"
+    }
+  ])
+  product_insertMany(data: [
+    {
+      id: "c3d4e5f6-a7b8-9012-3456-7890abcdef12",
+      name: "Vintage Denim Jacket",
+      description: "Classic blue denim jacket, perfect for all seasons.",
+      price: 75.00,
+      createdAt: "2024-01-15T10:10:00Z",
+      user: "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+    },
+    {
+      id: "d4e5f6a7-b8c9-0123-4567-890abcdef234",
+      name: "Striped Cotton T-Shirt",
+      description: "Comfortable and stylish cotton t-shirt with thin stripes.",
+      price: 25.50,
+      createdAt: "2024-01-15T10:15:00Z",
+      user: "b2c3d4e5-f6a7-8901-2345-67890abcdef0"
+    }
+  ])
+  order_insertMany(data: [
+    {
+      id: "e5f6a7b8-c9d0-1234-5678-90abcdef3456",
+      userId: "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+      totalAmount: 100.00,
+      createdAt: "2024-01-15T10:20:00Z"
+    }
+  ])
+  orderItem_insertMany(data: [
+    {
+      orderId: "e5f6a7b8-c9d0-1234-5678-90abcdef3456",
+      productId: "c3d4e5f6-a7b8-9012-3456-7890abcdef12",
+      quantity: 1,
+      price: 75.00
+    },
+    {
+      orderId: "e5f6a7b8-c9d0-1234-5678-90abcdef3456",
+      productId: "d4e5f6a7-b8c9-0123-4567-890abcdef234",
+      quantity: 1,
+      price: 25.00
+    }
+  ])
+}

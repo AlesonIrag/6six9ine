@@ -1,0 +1,46 @@
+query listAllProducts @auth(level: PUBLIC, insecureReason: "This operation is safe to expose to the public") {
+  products {
+    id
+    name
+    description
+    price
+    imageUrl
+    category
+  }
+}
+
+query getProductById($id: String!) @auth(level: PUBLIC, insecureReason: "This operation is safe to expose to the public") {
+  products(where: { id: { eq: $id } }) {
+    id
+    name
+    description
+    price
+    imageUrl
+    category
+  }
+}
+
+mutation createProduct($name: String!, $description: String!, $price: Float!, $imageUrl: String!, $category: String!) @auth(level: USER, insecureReason: "This operation is safe to expose to all logged in users.") {
+  product: product_insert(
+    data: {
+      name: $name
+      description: $description
+      price: $price
+      imageUrl: $imageUrl
+      category: $category
+    }
+  )
+}
+
+mutation updateProduct($id: String!, $name: String, $description: String, $price: Float, $imageUrl: String, $category: String) @auth(level: USER, insecureReason: "This operation is safe to expose to all logged in users.") {
+  product: product_update(
+    key: { id: $id }
+    data: {
+      name: $name
+      description: $description
+      price: $price
+      imageUrl: $imageUrl
+      category: $category
+    }
+  )
+}

@@ -1,0 +1,225 @@
+================================================================================
+  🔥 FIREBASE SETUP - STEP BY STEP INSTRUCTIONS
+================================================================================
+
+⚠️  IMPORTANT: The error you're seeing means Firestore hasn't been enabled yet!
+    Follow these steps to fix it (takes 5 minutes):
+
+================================================================================
+STEP 1: ENABLE FIRESTORE DATABASE
+================================================================================
+
+1. Open your web browser
+
+2. Go to: https://console.firebase.google.com/
+
+3. Click on your project: "six9ine-ec11e"
+
+4. In the left sidebar, click: "Build" → "Firestore Database"
+
+5. Click the blue button: "Create database"
+
+6. Choose a location:
+   ✅ Recommended: "asia-southeast1 (Singapore)"
+   (This is closest to Philippines for better performance)
+
+7. Select: "Start in test mode"
+   (This allows read/write access for development)
+
+8. Click: "Enable"
+
+9. Wait 1-2 minutes for Firestore to be created
+
+10. You should now see an empty Firestore Database interface
+    (It's normal to be empty - data will be added when you use the app)
+
+================================================================================
+STEP 2: SET SECURITY RULES
+================================================================================
+
+1. In Firestore Database, click the "Rules" tab at the top
+
+2. You'll see some default rules. DELETE everything and replace with:
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
+
+3. Click "Publish" button
+
+4. You should see: "Rules published successfully"
+
+NOTE: These rules allow anyone to read/write (for development only).
+      We'll add proper security later with authentication.
+
+================================================================================
+STEP 3: TEST FIREBASE CONNECTION
+================================================================================
+
+1. Open your terminal (Command Prompt or PowerShell)
+
+2. Navigate to your project folder:
+   cd C:\Users\Aleson C. Irag\Desktop\clothing
+
+3. Run the test script:
+   node test-firebase.js
+
+4. You should see:
+   ✅ Firebase initialized successfully
+   ✅ Write test successful
+   ✅ Read test successful
+   🎉 Firebase is working perfectly!
+
+5. If you see errors, go back to Step 1 and verify Firestore is enabled
+
+================================================================================
+STEP 4: START YOUR APPLICATION
+================================================================================
+
+1. In the terminal, run:
+   npm run dev
+
+2. Wait for the server to start (you'll see):
+   ✓ Ready in X seconds
+   ○ Local: http://localhost:3000
+
+3. Open your browser and go to: http://localhost:3000
+
+4. You should see your clothing store homepage
+
+================================================================================
+STEP 5: TEST ADMIN PANEL
+================================================================================
+
+1. Go to: http://localhost:3000/admin
+
+2. Login with:
+   Email: admin@6six9ine.com
+   Password: admin123
+
+3. Try these actions:
+
+   A. ADD A PRODUCT:
+      - Click "Products" tab
+      - Click "Add Product"
+      - Fill in details and upload images
+      - Click "Save Product"
+      - ✅ Product should save to Firebase
+
+   B. UPDATE STORY:
+      - Click "Story" tab
+      - Edit any section
+      - Upload an image
+      - Click "Save Story Content"
+      - ✅ Story should save to Firebase
+
+   C. UPDATE PROFILE:
+      - Click "Profile" tab
+      - Update GCash details
+      - Upload GCash QR code
+      - Click "Update Profile"
+      - ✅ Profile should save to Firebase
+
+================================================================================
+STEP 6: TEST CUSTOMER FLOW
+================================================================================
+
+1. Open a new browser tab (or incognito window)
+
+2. Go to: http://localhost:3000
+
+3. Click "SHOP NOW"
+
+4. You should see the products you added in admin
+
+5. Click on a product → Add to cart → Checkout
+
+6. Fill in customer details and place order
+
+7. Go back to admin panel → Orders tab
+
+8. You should see the new order!
+
+9. Click "View" on the order
+
+10. Try "Approve Payment" or update order status
+
+11. ✅ All changes should save to Firebase
+
+================================================================================
+STEP 7: VERIFY IN FIREBASE CONSOLE
+================================================================================
+
+1. Go back to Firebase Console: https://console.firebase.google.com/
+
+2. Click on your project: "six9ine-ec11e"
+
+3. Go to: Firestore Database
+
+4. You should now see collections:
+   - orders (with order documents)
+   - settings (with products, profile, story, blog documents)
+
+5. Click on any document to see the data you saved
+
+6. ✅ If you see your data here, Firebase is working perfectly!
+
+================================================================================
+🎉 CONGRATULATIONS! FIREBASE MIGRATION COMPLETE!
+================================================================================
+
+Your application is now using Firebase Firestore as the backend database!
+
+WHAT CHANGED:
+✅ All data now saves to cloud (not browser localStorage)
+✅ Data persists across devices and browsers
+✅ Admin changes instantly reflect on customer pages
+✅ Orders are stored permanently in Firebase
+✅ No more data loss when clearing browser cache
+
+WHAT TO DO NEXT:
+1. Test all features thoroughly
+2. Add more products
+3. Customize story and blog content
+4. Upload your GCash QR code
+5. Start taking real orders!
+
+NEED HELP?
+- Check browser console (F12) for errors
+- Check terminal for server errors
+- Review: README_FIREBASE.md for detailed documentation
+- Review: FIREBASE_MIGRATION_COMPLETE.md for technical details
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+PROBLEM: Still seeing "Code: 5 NOT_FOUND" error
+SOLUTION: 
+  - Make sure Firestore is enabled (Step 1)
+  - Check security rules are published (Step 2)
+  - Restart dev server (Ctrl+C, then npm run dev)
+
+PROBLEM: "Permission denied" error
+SOLUTION:
+  - Check security rules in Firebase Console
+  - Make sure rules allow read/write: if true
+
+PROBLEM: Data not saving
+SOLUTION:
+  - Check browser console (F12) for errors
+  - Check Network tab to see if API calls are failing
+  - Verify internet connection
+
+PROBLEM: Images not displaying
+SOLUTION:
+  - Images are stored as base64 in Firestore
+  - Large images may exceed 1MB document limit
+  - Try compressing images more (already implemented)
+
+================================================================================
