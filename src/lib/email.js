@@ -15,18 +15,28 @@ console.log('📧 [Email Service] Admin Email:', ADMIN_EMAIL);
 console.log('📧 [Email Service] From Email:', FROM_EMAIL);
 
 if (!RESEND_API_KEY) {
-  console.error('❌ [Email Service] RESEND_API_KEY is not set in environment variables!');
+  console.warn('⚠️ [Email Service] RESEND_API_KEY is not set - email functionality will be disabled');
 }
 
-const resend = new Resend(RESEND_API_KEY);
+// Only initialize Resend if API key is available
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
-console.log('✅ [Email Service] Resend initialized');
+if (resend) {
+  console.log('✅ [Email Service] Resend initialized');
+} else {
+  console.log('⚠️ [Email Service] Resend not initialized - emails will not be sent');
+}
 
 /**
  * Send email notification to admin when new order is placed
  */
 export async function sendAdminOrderNotification(order) {
   try {
+    if (!resend) {
+      console.warn('⚠️ Email service not available - skipping admin notification');
+      return { success: false, error: 'Email service not configured' };
+    }
+
     console.log('📧 Sending admin notification for order:', order.orderId);
     
     const itemsList = order.items.map(item => 
@@ -131,6 +141,11 @@ export async function sendAdminOrderNotification(order) {
  */
 export async function sendCustomerOrderConfirmation(order) {
   try {
+    if (!resend) {
+      console.warn('⚠️ Email service not available - skipping customer confirmation');
+      return { success: false, error: 'Email service not configured' };
+    }
+
     console.log('📧 Sending customer confirmation for order:', order.orderId);
     
     const itemsList = order.items.map(item => 
@@ -229,6 +244,11 @@ export async function sendCustomerOrderConfirmation(order) {
  */
 export async function sendPaymentApprovedEmail(order) {
   try {
+    if (!resend) {
+      console.warn('⚠️ Email service not available - skipping payment approved email');
+      return { success: false, error: 'Email service not configured' };
+    }
+
     console.log('📧 Sending payment approved email for order:', order.orderId);
     console.log('📧 To email:', order.email);
     console.log('📧 Customer name:', order.customerName);
@@ -346,6 +366,11 @@ export async function sendPaymentApprovedEmail(order) {
  */
 export async function sendPaymentRejectedEmail(order) {
   try {
+    if (!resend) {
+      console.warn('⚠️ Email service not available - skipping payment rejected email');
+      return { success: false, error: 'Email service not configured' };
+    }
+
     console.log('📧 Sending payment rejected email for order:', order.orderId);
 
     const { data, error } = await resend.emails.send({
