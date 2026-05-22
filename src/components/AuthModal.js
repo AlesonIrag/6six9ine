@@ -54,7 +54,39 @@ export default function AuthModal({ isOpen, onClose }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <button className="modal-close" onClick={onClose}>&times;</button>
+        <button 
+          className="modal-close" 
+          onClick={onClose}
+          style={{
+            position: 'absolute',
+            top: '16px',
+            right: '16px',
+            background: 'transparent',
+            border: 'none',
+            fontSize: '28px',
+            color: 'var(--text)',
+            cursor: 'pointer',
+            width: '32px',
+            height: '32px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '4px',
+            transition: 'all 0.2s ease',
+            zIndex: 10
+          }}
+          onMouseEnter={(e) => {
+            e.target.style.background = 'var(--bg-tertiary)';
+            e.target.style.transform = 'scale(1.1)';
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.background = 'transparent';
+            e.target.style.transform = 'scale(1)';
+          }}
+          aria-label="Close"
+        >
+          &times;
+        </button>
         <h2>SIGN IN</h2>
         {error && <p style={{color:'var(--danger)',fontSize:'13px',marginBottom:'16px',textAlign:'center'}}>{error}</p>}
         <form onSubmit={handleSubmit}>

@@ -2,6 +2,8 @@
 
 import { createContext, useContext, useState, useEffect } from 'react';
 import { sampleProducts } from '@/data/seed';
+import { db } from '@/lib/firebase';
+import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
 
 const ProductContext = createContext(undefined);
 
@@ -10,80 +12,74 @@ export function ProductProvider({ children }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // Load products from API on mount
+  // Real-time listener for products from Firestore
   useEffect(() => {
-    const loadProducts = async () => {
-      try {
-        const response = await fetch('/api/products');
-        if (response.ok) {
-          const data = await response.json();
-          if (data.length > 0) {
-            console.log('🚀 Products loaded from Firebase:', data.length);
-            
-            // Clean up data: Remove 'image' property from colorVariants if it exists
-            // Also convert object format to string format for consistency
-            const cleanedData = data.map(product => {
-              if (product.colorVariants && Array.isArray(product.colorVariants)) {
-                const cleanedVariants = product.colorVariants.map(variant => {
-                  // If variant is an object, extract the color string
-                  if (typeof variant === 'object' && variant !== null) {
-                    // Return just the color string, removing any other properties
-                    return variant.color || '';
-                  }
-                  // If it's already a string, return as-is
-                  return variant;
-                });
-                return { ...product, colorVariants: cleanedVariants };
-              }
-              return product;
-            });
-            
-            setProducts(cleanedData);
-            
-            // If we cleaned any data, save it back to Firebase
-            const needsCleaning = data.some(p => 
-              p.colorVariants?.some(v => typeof v === 'object' && v !== null)
-            );
-            if (needsCleaning) {
-              console.log('💾 Saving cleaned data back to Firebase...');
-              await fetch('/api/products', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(cleanedData)
+    console.log('🔥 Setting up real-time Firestore listener...');
+    
+    const productsRef = doc(db, 'settings', 'products');
+    
+    // Set up real-time listener
+    const unsubscribe = onSnapshot(
+      productsRef,
+      (docSnapshot) => {
+        if (docSnapshot.exists()) {
+          const data = docSnapshot.data();
+          const productsData = data.items || [];
+          
+          console.log('🔄 Real-time update: Products loaded from Firestore:', productsData.length);
+          
+          // Clean up data: Remove 'image' property from colorVariants if it exists
+          const cleanedData = productsData.map(product => {
+            if (product.colorVariants && Array.isArray(product.colorVariants)) {
+              const cleanedVariants = product.colorVariants.map(variant => {
+                if (typeof variant === 'object' && variant !== null) {
+                  return variant.color || '';
+                }
+                return variant;
               });
-              console.log('✅ Cleaned data saved to Firebase');
+              return { ...product, colorVariants: cleanedVariants };
             }
-          } else {
-            // First time - use sample products
-            console.log('🆕 First time load - Using sample products');
-            setProducts(sampleProducts);
-            // Save sample products to Firebase
-            await fetch('/api/products', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(sampleProducts)
-            });
-          }
+            return product;
+          });
+          
+          setProducts(cleanedData);
+          setIsLoading(false);
+          setIsInitialized(true);
+        } else {
+          // First time - use sample products
+          console.log('🆕 First time load - Using sample products');
+          setProducts(sampleProducts);
+          setIsLoading(false);
+          setIsInitialized(true);
+          
+          // Save sample products to Firestore
+          setDoc(productsRef, { items: sampleProducts, updatedAt: new Date().toISOString() })
+            .then(() => console.log('✅ Sample products saved to Firestore'))
+            .catch(err => console.error('❌ Failed to save sample products:', err));
         }
-      } catch (error) {
-        console.error('Failed to load products:', error);
+      },
+      (error) => {
+        console.error('❌ Firestore listener error:', error);
         setProducts(sampleProducts);
-      } finally {
         setIsLoading(false);
         setIsInitialized(true);
       }
-    };
+    );
 
-    loadProducts();
+    // Cleanup listener on unmount
+    return () => {
+      console.log('🔌 Disconnecting Firestore listener');
+      unsubscribe();
+    };
   }, []);
 
-  // Save products to API when they change
+  // Save products to Firestore when they change (but not on initial load)
   useEffect(() => {
     if (!isInitialized || products.length === 0) return;
 
     const saveProducts = async () => {
       try {
-        console.log('💾 Saving products to Firebase...', products.length, 'products');
+        console.log('💾 Saving products to Firestore...', products.length, 'products');
         const response = await fetch('/api/products', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -96,14 +92,16 @@ export function ProductProvider({ children }) {
         }
         
         const result = await response.json();
-        console.log('✅ Products saved to Firebase:', result);
+        console.log('✅ Products saved to Firestore:', result);
       } catch (error) {
         console.error('❌ Failed to save products:', error);
         console.error('Error details:', error.message);
       }
     };
 
-    saveProducts();
+    // Debounce saves to avoid too many writes
+    const timeoutId = setTimeout(saveProducts, 500);
+    return () => clearTimeout(timeoutId);
   }, [products, isInitialized]);
 
   const updateProduct = (slug, updates) => {
@@ -165,4 +163,3 @@ export function useProducts() {
   }
   return context;
 }
-

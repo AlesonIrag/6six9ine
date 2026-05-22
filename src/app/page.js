@@ -29,6 +29,13 @@ export default function HomePage() {
       return a.inStock ? -1 : 1;
     });
 
+  // Log when products update
+  console.log('🏠 Homepage - Total products:', products.length);
+  console.log('🏠 Homepage - Featured products (all):', featured.length, featured.map(p => p.name));
+  console.log('🏠 Homepage - Featured products (displayed):', featured.slice(0, 4).map(p => p.name));
+  console.log('🏠 Homepage - New drops (all):', newDrops.length, newDrops.map(p => p.name));
+  console.log('🏠 Homepage - New drops (displayed):', newDrops.slice(0, 4).map(p => p.name));
+
   return (
     <>
       {alertModal && (

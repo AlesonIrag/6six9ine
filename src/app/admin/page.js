@@ -5,6 +5,8 @@ import { useProducts } from '@/context/ProductContext';
 import Notification from '@/components/Notification';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import AlertModal from '@/components/AlertModal';
+import { db } from '@/lib/firebase';
+import { doc, collection, onSnapshot } from 'firebase/firestore';
 
 export default function AdminPage() {
   const { products, setAllProducts } = useProducts();
@@ -50,8 +52,6 @@ export default function AdminPage() {
   const [editingSectionIndex, setEditingSectionIndex] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showMobileMenu, setShowMobileMenu] = useState(false);
-  const [inventoryFilter, setInventoryFilter] = useState('all'); // 'all', 'tops', 'longsleeve', 'mask'
-  const [activeInventoryTab, setActiveInventoryTab] = useState('all'); // For inventory page filter tabs
 
   // Blog posts state
   const [blogPosts, setBlogPosts] = useState(sampleBlogPosts);
@@ -75,24 +75,39 @@ export default function AdminPage() {
     confirmPassword: '',
   });
 
-  // Load orders from API on mount
+  // Real-time listener for orders from Firestore
   useEffect(() => {
-    const loadOrders = async () => {
-      try {
-        const response = await fetch('/api/orders');
-        if (response.ok) {
-          const data = await response.json();
-          setOrders(data);
-          console.log('🚀 Admin: Orders loaded from Firebase:', data.length);
-        }
-      } catch (error) {
-        console.error('Failed to load orders:', error);
-      } finally {
+    console.log('🔥 Setting up real-time orders listener...');
+    
+    const ordersCollection = collection(db, 'orders');
+    
+    // Set up real-time listener for the collection
+    const unsubscribe = onSnapshot(
+      ordersCollection,
+      (querySnapshot) => {
+        const ordersData = [];
+        querySnapshot.forEach((doc) => {
+          ordersData.push({
+            id: doc.id,
+            ...doc.data()
+          });
+        });
+        console.log('🔄 Real-time update: Orders loaded from Firestore:', ordersData.length);
+        setOrders(ordersData);
+        setIsLoadingOrders(false);
+      },
+      (error) => {
+        console.error('❌ Firestore orders listener error:', error);
+        setOrders([]);
         setIsLoadingOrders(false);
       }
+    );
+
+    // Cleanup listener on unmount
+    return () => {
+      console.log('🔌 Disconnecting orders listener');
+      unsubscribe();
     };
-    
-    loadOrders();
   }, []);
 
   // Load story content from API on mount
@@ -398,9 +413,29 @@ export default function AdminPage() {
     showNotification('Inventory report downloaded!', 'success');
   };
   
-  const generateSalesReport = () => {
+  const generateSalesReport = (filterMonth = 'all') => {
+    let filteredOrders = orders;
+    
+    // Filter by month if specified
+    if (filterMonth === 'current') {
+      const now = new Date();
+      const currentMonth = now.getMonth();
+      const currentYear = now.getFullYear();
+      filteredOrders = orders.filter(o => {
+        const orderDate = new Date(o.createdAt);
+        return orderDate.getMonth() === currentMonth && orderDate.getFullYear() === currentYear;
+      });
+    } else if (filterMonth !== 'all') {
+      // filterMonth format: 'YYYY-MM'
+      const [year, month] = filterMonth.split('-').map(Number);
+      filteredOrders = orders.filter(o => {
+        const orderDate = new Date(o.createdAt);
+        return orderDate.getMonth() === month - 1 && orderDate.getFullYear() === year;
+      });
+    }
+    
     const headers = ['Order ID', 'Customer', 'Email', 'Phone', 'Total', 'Status', 'Payment Method', 'Date'];
-    const rows = orders.map(o => [
+    const rows = filteredOrders.map(o => [
       o.id,
       o.customerName,
       o.email,
@@ -419,11 +454,12 @@ export default function AdminPage() {
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
+    const monthLabel = filterMonth === 'all' ? 'all' : filterMonth === 'current' ? 'current-month' : filterMonth;
     a.href = url;
-    a.download = `sales-report-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `sales-report-${monthLabel}-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
-    showNotification('Sales report downloaded!', 'success');
+    showNotification(`Sales report downloaded! (${filteredOrders.length} orders)`, 'success');
   };
 
   const getStatusColor = (status) => {
@@ -541,15 +577,19 @@ export default function AdminPage() {
   };
 
   const toggleFeatured = (slug) => {
-    setAllProducts(products.map(p => 
+    const updatedProducts = products.map(p => 
       p.slug === slug ? {...p, featured: !p.featured} : p
-    ));
+    );
+    console.log('⭐ Toggling featured for:', slug);
+    setAllProducts(updatedProducts);
   };
 
   const toggleNewDrop = (slug) => {
-    setAllProducts(products.map(p => 
+    const updatedProducts = products.map(p => 
       p.slug === slug ? {...p, isNewDrop: !p.isNewDrop} : p
-    ));
+    );
+    console.log('🆕 Toggling new drop for:', slug);
+    setAllProducts(updatedProducts);
   };
 
   const toggleStock = (slug) => {
@@ -1099,12 +1139,6 @@ export default function AdminPage() {
             <span className="admin-nav-text">Products</span>
           </button>
           <button 
-            className={`admin-sidebar-link ${activeTab === 'inventory' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('inventory'); setShowMobileMenu(false); }}
-          >
-            <span className="admin-nav-text">Inventory</span>
-          </button>
-          <button 
             className={`admin-sidebar-link ${activeTab === 'orders' ? 'active' : ''}`}
             onClick={() => { setActiveTab('orders'); setShowMobileMenu(false); }}
           >
@@ -1147,14 +1181,6 @@ export default function AdminPage() {
           <>
             <div className="admin-section-header" style={{marginBottom:'32px'}}>
               <h2>DASHBOARD OVERVIEW</h2>
-              <div style={{display:'flex',gap:'12px'}}>
-                <button className="admin-btn-primary" onClick={generateInventoryReport} style={{display:'flex',alignItems:'center',gap:'8px'}}>
-                  <span>📊</span> Inventory Report
-                </button>
-                <button className="admin-btn-primary" onClick={generateSalesReport} style={{display:'flex',alignItems:'center',gap:'8px'}}>
-                  <span>💰</span> Sales Report
-                </button>
-              </div>
             </div>
             
             {/* Main Stats Grid */}
@@ -1333,15 +1359,10 @@ export default function AdminPage() {
           <div className="admin-section">
             <div className="admin-section-header">
               <h2>
-                {inventoryFilter === 'all' ? 'ALL PRODUCTS' : 
-                 inventoryFilter === 'tops' ? '👕 TOPS' :
-                 inventoryFilter === 'longsleeve' ? '🧥 LONGSLEEVE' :
-                 inventoryFilter === 'mask' ? '😷 MASK' : 'ALL PRODUCTS'} 
-                ({products.filter(p => {
+                ALL PRODUCTS ({products.filter(p => {
                   const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                     p.category.toLowerCase().includes(searchQuery.toLowerCase());
-                  const matchesCategory = inventoryFilter === 'all' || p.category === inventoryFilter;
-                  return matchesSearch && matchesCategory;
+                  return matchesSearch;
                 }).length})
               </h2>
               <button className="admin-btn-primary" onClick={handleAddProduct}>+ Add Product</button>
@@ -1350,32 +1371,31 @@ export default function AdminPage() {
             {/* Low Stock Warning */}
             {products.filter(p => (p.quantity || 0) < 10 && (p.quantity || 0) > 0).length > 0 && (
               <div style={{
-                padding:'16px 20px',
-                background:'linear-gradient(135deg, rgba(241, 196, 15, 0.15) 0%, rgba(241, 196, 15, 0.05) 100%)',
-                border:'2px solid var(--accent)',
-                borderRadius:'8px',
-                marginBottom:'24px',
+                padding:'10px 14px',
+                background:'rgba(241, 196, 15, 0.1)',
+                border:'1px solid var(--accent)',
+                borderRadius:'6px',
+                marginBottom:'16px',
                 display:'flex',
                 alignItems:'center',
-                gap:'16px'
+                gap:'10px'
               }}>
-                <span style={{fontSize:'32px'}}>⚠️</span>
+                <span style={{fontSize:'20px'}}>⚠️</span>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:'14px',fontWeight:'700',color:'var(--accent)',marginBottom:'4px',letterSpacing:'1px'}}>
+                  <div style={{fontSize:'12px',fontWeight:'600',color:'var(--accent)',marginBottom:'4px'}}>
                     LOW STOCK WARNING
                   </div>
-                  <div style={{fontSize:'13px',color:'var(--text)',lineHeight:'1.6'}}>
-                    {products.filter(p => (p.quantity || 0) < 10 && (p.quantity || 0) > 0).length} product(s) have low stock (below 10 items). 
-                    Consider restocking soon to avoid running out.
+                  <div style={{fontSize:'11px',color:'var(--text-secondary)'}}>
+                    {products.filter(p => (p.quantity || 0) < 10 && (p.quantity || 0) > 0).length} product(s) have low stock (below 10 items). Consider restocking soon to avoid running out.
                   </div>
-                  <div style={{marginTop:'8px',display:'flex',flexWrap:'wrap',gap:'8px'}}>
+                  <div style={{marginTop:'6px',display:'flex',flexWrap:'wrap',gap:'6px'}}>
                     {products.filter(p => (p.quantity || 0) < 10 && (p.quantity || 0) > 0).map(p => (
                       <span key={p.slug} style={{
-                        fontSize:'11px',
-                        padding:'4px 8px',
+                        fontSize:'10px',
+                        padding:'2px 6px',
                         background:'var(--bg-card)',
                         border:'1px solid var(--border)',
-                        borderRadius:'4px',
+                        borderRadius:'3px',
                         color:'var(--text-secondary)'
                       }}>
                         {p.name}: {p.quantity} left
@@ -1389,32 +1409,31 @@ export default function AdminPage() {
             {/* Out of Stock Warning */}
             {products.filter(p => (p.quantity || 0) === 0).length > 0 && (
               <div style={{
-                padding:'16px 20px',
-                background:'linear-gradient(135deg, rgba(231, 76, 60, 0.15) 0%, rgba(231, 76, 60, 0.05) 100%)',
-                border:'2px solid var(--danger)',
-                borderRadius:'8px',
-                marginBottom:'24px',
+                padding:'10px 14px',
+                background:'rgba(231, 76, 60, 0.1)',
+                border:'1px solid var(--danger)',
+                borderRadius:'6px',
+                marginBottom:'16px',
                 display:'flex',
                 alignItems:'center',
-                gap:'16px'
+                gap:'10px'
               }}>
-                <span style={{fontSize:'32px'}}>🚨</span>
+                <span style={{fontSize:'20px'}}>🚨</span>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:'14px',fontWeight:'700',color:'var(--danger)',marginBottom:'4px',letterSpacing:'1px'}}>
+                  <div style={{fontSize:'12px',fontWeight:'600',color:'var(--danger)',marginBottom:'4px'}}>
                     OUT OF STOCK ALERT
                   </div>
-                  <div style={{fontSize:'13px',color:'var(--text)',lineHeight:'1.6'}}>
-                    {products.filter(p => (p.quantity || 0) === 0).length} product(s) are completely out of stock. 
-                    Restock immediately to continue selling.
+                  <div style={{fontSize:'11px',color:'var(--text-secondary)'}}>
+                    {products.filter(p => (p.quantity || 0) === 0).length} product(s) are completely out of stock. Restock immediately to continue selling.
                   </div>
-                  <div style={{marginTop:'8px',display:'flex',flexWrap:'wrap',gap:'8px'}}>
+                  <div style={{marginTop:'6px',display:'flex',flexWrap:'wrap',gap:'6px'}}>
                     {products.filter(p => (p.quantity || 0) === 0).map(p => (
                       <span key={p.slug} style={{
-                        fontSize:'11px',
-                        padding:'4px 8px',
+                        fontSize:'10px',
+                        padding:'2px 6px',
                         background:'var(--bg-card)',
                         border:'1px solid var(--danger)',
-                        borderRadius:'4px',
+                        borderRadius:'3px',
                         color:'var(--danger)',
                         fontWeight:'600'
                       }}>
@@ -1500,8 +1519,7 @@ export default function AdminPage() {
                     .filter(p => {
                       const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                         p.category.toLowerCase().includes(searchQuery.toLowerCase());
-                      const matchesCategory = inventoryFilter === 'all' || p.category === inventoryFilter;
-                      return matchesSearch && matchesCategory;
+                      return matchesSearch;
                     })
                     .map(p => (
                     <tr key={p.slug}>
@@ -1590,391 +1608,6 @@ export default function AdminPage() {
           </div>
         )}
 
-        {activeTab === 'inventory' && (
-          <div className="admin-section">
-            <div className="admin-section-header">
-              <h2>INVENTORY MANAGEMENT</h2>
-            </div>
-
-            {/* Filter Buttons */}
-            <div style={{
-              display: 'flex',
-              gap: '16px',
-              marginBottom: '32px',
-              flexWrap: 'wrap'
-            }}>
-              <button
-                onClick={() => setActiveInventoryTab('all')}
-                style={{
-                  flex: '1',
-                  minWidth: '200px',
-                  padding: '20px',
-                  background: activeInventoryTab === 'all' ? 'linear-gradient(135deg, rgba(212, 168, 67, 0.2) 0%, rgba(212, 168, 67, 0.1) 100%)' : 'var(--bg-card)',
-                  border: activeInventoryTab === 'all' ? '2px solid var(--accent)' : '2px solid var(--border)',
-                  borderRadius: '12px',
-                  color: 'var(--text)',
-                  cursor: 'pointer',
-                  transition: 'all var(--transition)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '12px'
-                }}
-                onMouseEnter={(e) => {
-                  if (activeInventoryTab !== 'all') {
-                    e.currentTarget.style.borderColor = 'var(--accent)';
-                    e.currentTarget.style.transform = 'translateY(-4px)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (activeInventoryTab !== 'all') {
-                    e.currentTarget.style.borderColor = 'var(--border)';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                  }
-                }}
-              >
-                <span style={{fontSize: '48px'}}>📦</span>
-                <div style={{textAlign: 'center'}}>
-                  <div style={{
-                    fontFamily: 'Bebas Neue',
-                    fontSize: '24px',
-                    letterSpacing: '2px',
-                    color: activeInventoryTab === 'all' ? 'var(--accent)' : 'var(--text)'
-                  }}>
-                    All Products
-                  </div>
-                  <div style={{fontSize: '14px', color: 'var(--text-secondary)', marginTop: '4px'}}>
-                    {products.length} items
-                  </div>
-                </div>
-              </button>
-
-              <button
-                onClick={() => setActiveInventoryTab('tops')}
-                style={{
-                  flex: '1',
-                  minWidth: '200px',
-                  padding: '20px',
-                  background: activeInventoryTab === 'tops' ? 'linear-gradient(135deg, rgba(212, 168, 67, 0.2) 0%, rgba(212, 168, 67, 0.1) 100%)' : 'var(--bg-card)',
-                  border: activeInventoryTab === 'tops' ? '2px solid var(--accent)' : '2px solid var(--border)',
-                  borderRadius: '12px',
-                  color: 'var(--text)',
-                  cursor: 'pointer',
-                  transition: 'all var(--transition)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '12px'
-                }}
-                onMouseEnter={(e) => {
-                  if (activeInventoryTab !== 'tops') {
-                    e.currentTarget.style.borderColor = 'var(--accent)';
-                    e.currentTarget.style.transform = 'translateY(-4px)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (activeInventoryTab !== 'tops') {
-                    e.currentTarget.style.borderColor = 'var(--border)';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                  }
-                }}
-              >
-                <span style={{fontSize: '48px'}}>👕</span>
-                <div style={{textAlign: 'center'}}>
-                  <div style={{
-                    fontFamily: 'Bebas Neue',
-                    fontSize: '24px',
-                    letterSpacing: '2px',
-                    color: activeInventoryTab === 'tops' ? 'var(--accent)' : 'var(--text)'
-                  }}>
-                    Tops
-                  </div>
-                  <div style={{fontSize: '14px', color: 'var(--text-secondary)', marginTop: '4px'}}>
-                    {products.filter(p => p.category === 'tops').length} items
-                  </div>
-                </div>
-              </button>
-
-              <button
-                onClick={() => setActiveInventoryTab('longsleeve')}
-                style={{
-                  flex: '1',
-                  minWidth: '200px',
-                  padding: '20px',
-                  background: activeInventoryTab === 'longsleeve' ? 'linear-gradient(135deg, rgba(212, 168, 67, 0.2) 0%, rgba(212, 168, 67, 0.1) 100%)' : 'var(--bg-card)',
-                  border: activeInventoryTab === 'longsleeve' ? '2px solid var(--accent)' : '2px solid var(--border)',
-                  borderRadius: '12px',
-                  color: 'var(--text)',
-                  cursor: 'pointer',
-                  transition: 'all var(--transition)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '12px'
-                }}
-                onMouseEnter={(e) => {
-                  if (activeInventoryTab !== 'longsleeve') {
-                    e.currentTarget.style.borderColor = 'var(--accent)';
-                    e.currentTarget.style.transform = 'translateY(-4px)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (activeInventoryTab !== 'longsleeve') {
-                    e.currentTarget.style.borderColor = 'var(--border)';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                  }
-                }}
-              >
-                <span style={{fontSize: '48px'}}>🧥</span>
-                <div style={{textAlign: 'center'}}>
-                  <div style={{
-                    fontFamily: 'Bebas Neue',
-                    fontSize: '24px',
-                    letterSpacing: '2px',
-                    color: activeInventoryTab === 'longsleeve' ? 'var(--accent)' : 'var(--text)'
-                  }}>
-                    Longsleeve
-                  </div>
-                  <div style={{fontSize: '14px', color: 'var(--text-secondary)', marginTop: '4px'}}>
-                    {products.filter(p => p.category === 'longsleeve').length} items
-                  </div>
-                </div>
-              </button>
-
-              <button
-                onClick={() => setActiveInventoryTab('mask')}
-                style={{
-                  flex: '1',
-                  minWidth: '200px',
-                  padding: '20px',
-                  background: activeInventoryTab === 'mask' ? 'linear-gradient(135deg, rgba(212, 168, 67, 0.2) 0%, rgba(212, 168, 67, 0.1) 100%)' : 'var(--bg-card)',
-                  border: activeInventoryTab === 'mask' ? '2px solid var(--accent)' : '2px solid var(--border)',
-                  borderRadius: '12px',
-                  color: 'var(--text)',
-                  cursor: 'pointer',
-                  transition: 'all var(--transition)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '12px'
-                }}
-                onMouseEnter={(e) => {
-                  if (activeInventoryTab !== 'mask') {
-                    e.currentTarget.style.borderColor = 'var(--accent)';
-                    e.currentTarget.style.transform = 'translateY(-4px)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (activeInventoryTab !== 'mask') {
-                    e.currentTarget.style.borderColor = 'var(--border)';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                  }
-                }}
-              >
-                <span style={{fontSize: '48px'}}>😷</span>
-                <div style={{textAlign: 'center'}}>
-                  <div style={{
-                    fontFamily: 'Bebas Neue',
-                    fontSize: '24px',
-                    letterSpacing: '2px',
-                    color: activeInventoryTab === 'mask' ? 'var(--accent)' : 'var(--text)'
-                  }}>
-                    Mask
-                  </div>
-                  <div style={{fontSize: '14px', color: 'var(--text-secondary)', marginTop: '4px'}}>
-                    {products.filter(p => p.category === 'mask').length} items
-                  </div>
-                </div>
-              </button>
-            </div>
-
-            {/* Catalog Value by Category */}
-            <div style={{marginTop:'24px',marginBottom:'24px'}}>
-              <h2 style={{fontFamily:'Bebas Neue',fontSize:'20px',letterSpacing:'2px',marginBottom:'16px',display:'flex',alignItems:'center',gap:'8px'}}>
-                <span>📊</span> CATALOG VALUE BY CATEGORY
-              </h2>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(280px, 1fr))',gap:'16px'}}>
-                {Object.entries(catalogByCategory).map(([category, data]) => (
-                  <div key={category} style={{
-                    background:'var(--bg-card)',
-                    border:'1px solid var(--border)',
-                    borderRadius:'8px',
-                    padding:'20px',
-                    transition:'all var(--transition)'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--accent)';
-                    e.currentTarget.style.transform = 'translateY(-4px)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--border)';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                  }}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'12px'}}>
-                      <h3 style={{
-                        fontFamily:'Bebas Neue',
-                        fontSize:'18px',
-                        letterSpacing:'2px',
-                        color:'var(--accent)',
-                        textTransform:'uppercase'
-                      }}>
-                        {category}
-                      </h3>
-                      <span style={{
-                        fontSize:'20px',
-                        background:'var(--bg-tertiary)',
-                        padding:'6px 10px',
-                        borderRadius:'6px'
-                      }}>
-                        {category === 'tops' ? '👕' : category === 'longsleeve' ? '🧥' : category === 'mask' ? '😷' : '📦'}
-                      </span>
-                    </div>
-                    <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
-                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                        <span style={{fontSize:'11px',color:'var(--text-secondary)',letterSpacing:'1px'}}>TOTAL VALUE</span>
-                        <span style={{fontSize:'18px',fontWeight:'700',color:'var(--accent)'}}>
-                          ₱{data.totalValue.toLocaleString()}
-                        </span>
-                      </div>
-                      <div style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderTop:'1px solid var(--border)'}}>
-                        <span style={{fontSize:'10px',color:'var(--text-muted)'}}>Products</span>
-                        <span style={{fontSize:'12px',fontWeight:'600'}}>{data.count}</span>
-                      </div>
-                      <div style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderTop:'1px solid var(--border)'}}>
-                        <span style={{fontSize:'10px',color:'var(--text-muted)'}}>Total Quantity</span>
-                        <span style={{fontSize:'12px',fontWeight:'600'}}>{data.totalQuantity} items</span>
-                      </div>
-                      <div style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderTop:'1px solid var(--border)'}}>
-                        <span style={{fontSize:'10px',color:'var(--success)'}}>✓ In Stock</span>
-                        <span style={{fontSize:'12px',fontWeight:'600',color:'var(--success)'}}>{data.inStock}</span>
-                      </div>
-                      <div style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderTop:'1px solid var(--border)'}}>
-                        <span style={{fontSize:'10px',color:'var(--danger)'}}>✗ Out of Stock</span>
-                        <span style={{fontSize:'12px',fontWeight:'600',color:'var(--danger)'}}>{data.outOfStock}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Filtered Products Table */}
-            <div className="admin-table-container">
-              <table className="admin-table-modern">
-                <thead>
-                  <tr>
-                    <th>Product</th>
-                    <th>Category</th>
-                    <th>Price</th>
-                    <th>Quantity</th>
-                    <th>Variants</th>
-                    <th>Stock</th>
-                    <th>Featured</th>
-                    <th>New Drop</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {products
-                    .filter(p => activeInventoryTab === 'all' || p.category === activeInventoryTab)
-                    .map(p => (
-                    <tr key={p.slug}>
-                      <td>
-                        <div className="admin-product-cell">
-                          <div className="admin-product-img">
-                            <img src={p.images[0]} alt={p.name} />
-                          </div>
-                          <span>{p.name}</span>
-                        </div>
-                      </td>
-                      <td><span className="admin-category-badge">{p.category}</span></td>
-                      <td className="admin-price">₱{p.price.toLocaleString()}</td>
-                      <td>
-                        <span style={{
-                          fontSize:'14px',
-                          fontWeight:'600',
-                          color: (p.quantity || 0) === 0 ? 'var(--danger)' : (p.quantity || 0) < 10 ? 'var(--accent)' : 'var(--success)'
-                        }}>
-                          {p.quantity || 0}
-                        </span>
-                      </td>
-                      <td>
-                        <span style={{fontSize:'12px',color:'var(--text-secondary)'}}>
-                          {p.images.length} image{p.images.length > 1 ? 's' : ''}
-                        </span>
-                      </td>
-                      <td>
-                        <button 
-                          onClick={() => toggleStock(p.slug)}
-                          style={{
-                            background:'none',
-                            border:'none',
-                            color: (p.quantity || 0) === 0 ? 'var(--danger)' : (p.quantity || 0) < 10 ? 'var(--accent)' : 'var(--success)',
-                            cursor:'pointer',
-                            fontSize:'14px',
-                            fontWeight:'600'
-                          }}
-                        >
-                          {(p.quantity || 0) === 0 ? '✗ Out of Stock' : (p.quantity || 0) < 10 ? '⚠ Low Stock' : '✓ In Stock'}
-                        </button>
-                      </td>
-                      <td>
-                        <button 
-                          onClick={() => toggleFeatured(p.slug)}
-                          style={{
-                            background:'none',
-                            border:'none',
-                            fontSize:'20px',
-                            cursor:'pointer',
-                            opacity: p.featured ? 1 : 0.3
-                          }}
-                        >
-                          ⭐
-                        </button>
-                      </td>
-                      <td>
-                        <button 
-                          onClick={() => toggleNewDrop(p.slug)}
-                          style={{
-                            background: p.isNewDrop ? 'var(--accent)' : 'var(--bg-tertiary)',
-                            border: '1px solid var(--border)',
-                            color: p.isNewDrop ? 'var(--bg)' : 'var(--text-secondary)',
-                            padding: '4px 8px',
-                            fontSize: '10px',
-                            fontWeight: '700',
-                            letterSpacing: '1px',
-                            cursor:'pointer',
-                            borderRadius: '4px'
-                          }}
-                        >
-                          {p.isNewDrop ? 'NEW' : 'OLD'}
-                        </button>
-                      </td>
-                      <td>
-                        <div className="admin-actions">
-                          <button 
-                            onClick={() => handleEditProduct(p)}
-                            className="admin-btn-icon"
-                            title="Edit"
-                          >
-                            ✏️
-                          </button>
-                          <button 
-                            onClick={() => handleDeleteProduct(p.slug)}
-                            className="admin-btn-icon admin-btn-danger"
-                            title="Delete"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
 
         {activeTab === 'orders' && (
           <div className="admin-section">
